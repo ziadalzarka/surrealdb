@@ -13,6 +13,8 @@ mod mem;
 mod rocksdb;
 #[cfg(feature = "kv-speedb")]
 mod speedb;
+#[cfg(feature = "kv-redb")]
+mod redb;
 #[cfg(feature = "kv-tikv")]
 mod tikv;
 

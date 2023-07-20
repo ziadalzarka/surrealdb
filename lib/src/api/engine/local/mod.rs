@@ -228,6 +228,41 @@ pub struct RocksDb;
 #[derive(Debug)]
 pub struct SpeeDb;
 
+/// ReDb database
+///
+/// # Examples
+///
+/// Instantiating a ReDb-backed instance
+///
+/// ```no_run
+/// # #[tokio::main]
+/// # async fn main() -> surrealdb::Result<()> {
+/// use surrealdb::Surreal;
+/// use surrealdb::engine::local::ReDb;
+///
+/// let db = Surreal::new::<ReDb>("temp.db").await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Instantiating a ReDb-backed strict instance
+///
+/// ```no_run
+/// # #[tokio::main]
+/// # async fn main() -> surrealdb::Result<()> {
+/// use surrealdb::opt::Strict;
+/// use surrealdb::Surreal;
+/// use surrealdb::engine::local::ReDb;
+///
+/// let db = Surreal::new::<ReDb>(("temp.db", Strict)).await?;
+/// # Ok(())
+/// # }
+/// ```
+#[cfg(feature = "kv-redb")]
+#[cfg_attr(docsrs, doc(cfg(feature = "kv-redb")))]
+#[derive(Debug)]
+pub struct ReDb;
+
 /// IndxDB database
 ///
 /// # Examples

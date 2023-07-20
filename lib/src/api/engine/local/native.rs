@@ -93,7 +93,7 @@ pub(crate) fn router(
 		let kvs = {
 			let path = match url.scheme() {
 				"mem" => "memory".to_owned(),
-				"fdb" | "rocksdb" | "speedb" | "file" => match url.to_file_path() {
+				"fdb" | "rocksdb" | "speedb" | "redb" | "file" => match url.to_file_path() {
 					Ok(path) => format!("{}://{}", url.scheme(), path.display()),
 					Err(_) => {
 						let error = Error::InvalidUrl(url.as_str().to_owned());

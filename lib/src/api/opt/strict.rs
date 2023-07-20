@@ -4,6 +4,7 @@
 	feature = "kv-tikv",
 	feature = "kv-rocksdb",
 	feature = "kv-speedb",
+	feature = "kv-redb",
 	feature = "kv-fdb",
 	feature = "kv-indxdb",
 ))]

@@ -595,6 +595,13 @@ impl From<speedb::Error> for Error {
 	}
 }
 
+#[cfg(feature = "kv-redb")]
+impl From<speedb::Error> for Error {
+	fn from(e: speedb::Error) -> Error {
+		Error::Tx(e.to_string())
+	}
+}
+
 #[cfg(feature = "kv-rocksdb")]
 impl From<rocksdb::Error> for Error {
 	fn from(e: rocksdb::Error) -> Error {

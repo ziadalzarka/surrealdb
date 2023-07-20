@@ -96,6 +96,7 @@ use crate::api::err::Error;
 	feature = "kv-rocksdb",
 	feature = "kv-fdb",
 	feature = "kv-indxdb",
+	feature = "kv-redb",
 ))]
 use crate::api::opt::auth::Root;
 use crate::api::opt::Endpoint;
@@ -104,6 +105,7 @@ use crate::api::opt::Endpoint;
 	feature = "kv-tikv",
 	feature = "kv-rocksdb",
 	feature = "kv-speedb",
+	feature = "kv-redb",
 	feature = "kv-fdb",
 	feature = "kv-indxdb",
 ))]
@@ -186,6 +188,7 @@ where
 	feature = "kv-tikv",
 	feature = "kv-rocksdb",
 	feature = "kv-speedb",
+	feature = "kv-redb",
 	feature = "kv-fdb",
 	feature = "kv-indxdb",
 ))]
@@ -196,6 +199,7 @@ where
 		feature = "kv-tikv",
 		feature = "kv-rocksdb",
 		feature = "kv-speedb",
+		feature = "kv-redb",
 		feature = "kv-fdb",
 		feature = "kv-indxdb",
 	)))
@@ -348,6 +352,7 @@ where
 		feature = "kv-tikv",
 		feature = "kv-rocksdb",
 		feature = "kv-speedb",
+		feature = "kv-redb",
 		feature = "kv-fdb",
 		feature = "kv-indxdb",
 	),
@@ -361,6 +366,7 @@ where
 			feature = "kv-tikv",
 			feature = "kv-rocksdb",
 			feature = "kv-speedb",
+			feature = "kv-redb",
 			feature = "kv-fdb",
 			feature = "kv-indxdb",
 		),

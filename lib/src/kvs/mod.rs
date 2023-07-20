@@ -20,6 +20,7 @@ mod kv;
 mod mem;
 mod rocksdb;
 mod speedb;
+mod redb;
 mod tikv;
 mod tx;
 

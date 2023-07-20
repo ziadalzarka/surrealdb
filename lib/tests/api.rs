@@ -230,6 +230,22 @@ mod api_integration {
 		include!("api/backup.rs");
 	}
 
+	#[cfg(feature = "kv-redb")]
+	mod redb {
+		use super::*;
+		use surrealdb::engine::local::Db;
+		use surrealdb::engine::local::ReDB;
+
+		async fn new_db() -> Surreal<Db> {
+			init_logger();
+			let path = format!("/tmp/{}.db", Ulid::new());
+			Surreal::new::<ReDB>(path.as_str()).await.unwrap()
+		}
+
+		include!("api/mod.rs");
+		include!("api/backup.rs");
+	}
+
 	#[cfg(feature = "kv-tikv")]
 	mod tikv {
 		use super::*;

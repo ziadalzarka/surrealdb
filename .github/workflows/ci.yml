@@ -288,6 +288,25 @@ jobs:
           cargo test --locked --package surrealdb --no-default-features --features kv-speedb --lib kvs
           cargo test --locked --package surrealdb --no-default-features --features kv-speedb --test api api_integration::speedb
 
+  redb-engine:
+    name: ReDB engine
+    runs-on: ubuntu-20.04
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run cargo test
+        run: |
+          cargo test --locked --package surrealdb --no-default-features --features kv-redb --lib kvs
+          cargo test --locked --package surrealdb --no-default-features --features kv-redb --test api api_integration::redb
+
   tikv-engine:
      name: TiKV engine
      runs-on: ubuntu-20.04

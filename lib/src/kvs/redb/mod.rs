@@ -4,14 +4,29 @@ use crate::err::Error;
 use crate::kvs::Key;
 use crate::kvs::Val;
 use futures::lock::Mutex;
-use redb::{OptimisticTransactionDB, OptimisticTransactionOptions, ReadOptions, WriteOptions};
+use redb::{Database, Error as ReDbError, ReadableTable, TableDefinition, WriteTransaction, ReadTransaction};
+use redb::RedbKey;
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
 
+
+const TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("surreal_db");
+
+pub enum TransactionType {
+	Read(ReadTransaction<'static>),
+	Write(WriteTransaction<'static>),
+}
+
+impl TransactionType {
+
+	fn rollback(&self) {}
+
+}
+
 #[derive(Clone)]
 pub struct Datastore {
-	db: Pin<Arc<OptimisticTransactionDB>>,
+	db: Pin<Arc<Database>>,
 }
 
 pub struct Transaction {
@@ -20,48 +35,48 @@ pub struct Transaction {
 	// Is the transaction read+write?
 	rw: bool,
 	// The distributed datastore transaction
-	tx: Arc<Mutex<Option<redb::Transaction<'static, OptimisticTransactionDB>>>>,
+	tx: Arc<Mutex<Option<TransactionType>>>,
 	// The read options containing the Snapshot
-	ro: ReadOptions,
+	// ro: ReadOptions,
 	// the above, supposedly 'static, transaction actually points here, so keep the memory alive
 	// note that this is dropped last, as it is declared last
-	_db: Pin<Arc<OptimisticTransactionDB>>,
+	_db: Pin<Arc<Database>>,
 }
 
 impl Datastore {
 	/// Open a new database
 	pub async fn new(path: &str) -> Result<Datastore, Error> {
 		Ok(Datastore {
-			db: Arc::pin(OptimisticTransactionDB::open_default(path)?),
+			db: Arc::pin(Database::create(path).map_err(|e| {Error::Ds(e.to_string())})?),
 		})
 	}
 	/// Start a new transaction
 	pub async fn transaction(&self, write: bool, _: bool) -> Result<Transaction, Error> {
-		// Activate the snapshot options
-		let mut to = OptimisticTransactionOptions::default();
-		to.set_snapshot(true);
-		// Create a new transaction
-		let tx = self.db.transaction_opt(&WriteOptions::default(), &to);
-		// The database reference must always outlive
-		// the transaction. If it doesn't then this
-		// is undefined behaviour. This unsafe block
-		// ensures that the transaction reference is
-		// static, but will cause a crash if the
-		// datastore is dropped prematurely.
-		let tx = unsafe {
-			std::mem::transmute::<
-				redb::Transaction<'_, OptimisticTransactionDB>,
-				redb::Transaction<'static, OptimisticTransactionDB>,
-			>(tx)
+
+		let tx = match write {
+			false => {
+				let tx = unsafe {
+					std::mem::transmute::<
+					ReadTransaction<'_>,
+					ReadTransaction<'static>,
+					>(self.db.begin_read().map_err(|e| {Error::Ds(e.to_string())})?)
+				};
+				TransactionType::Read(tx)
+			},
+			true => {
+				let tx = unsafe {
+					std::mem::transmute::<
+					WriteTransaction<'_>,
+					WriteTransaction<'static>,
+					>(self.db.begin_write().map_err(|e| {Error::Ds(e.to_string())})?)
+				};
+				TransactionType::Write(tx)
+			}
 		};
-		let mut ro = ReadOptions::default();
-		ro.set_snapshot(&tx.snapshot());
-		// Return the transaction
 		Ok(Transaction {
 			ok: false,
 			rw: write,
 			tx: Arc::new(Mutex::new(Some(tx))),
-			ro,
 			_db: self.db.clone(),
 		})
 	}
@@ -82,7 +97,10 @@ impl Transaction {
 		self.ok = true;
 		// Cancel this transaction
 		match self.tx.lock().await.take() {
-			Some(tx) => tx.rollback()?,
+			Some(tx) => match tx {
+				TransactionType::Read(_) => {},
+				TransactionType::Write(write_transaction) => write_transaction.abort().map_err(|e| {Error::Ds(e.to_string())})?,
+			},
 			None => unreachable!(),
 		};
 		// Continue
@@ -102,7 +120,10 @@ impl Transaction {
 		self.ok = true;
 		// Cancel this transaction
 		match self.tx.lock().await.take() {
-			Some(tx) => tx.commit()?,
+			Some(tx) => match tx {
+				TransactionType::Read(_) => {unreachable!()},
+				TransactionType::Write(write_transaction) => write_transaction.commit().map_err(|e| {Error::Ds(e.to_string())})?,
+			}
 			None => unreachable!(),
 		};
 		// Continue
@@ -117,10 +138,22 @@ impl Transaction {
 		if self.ok {
 			return Err(Error::TxFinished);
 		}
-		// Check the key
-		let res = self.tx.lock().await.as_ref().unwrap().get_opt(key.into(), &self.ro)?.is_some();
-		// Return result
-		Ok(res)
+		if let None = self.tx.lock().await.take() {
+			unreachable!()
+		}
+
+		match self.tx.lock().await.as_ref().unwrap() {
+			TransactionType::Read(read_transaction) => {
+				let table = read_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				let result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				Ok(result.is_some())
+			},
+			TransactionType::Write(write_transaction) => {
+				let table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				let result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				Ok(result.is_some())
+			}
+		}
 	}
 	/// Fetch a key from the database
 	pub async fn get<K>(&mut self, key: K) -> Result<Option<Val>, Error>
@@ -131,10 +164,28 @@ impl Transaction {
 		if self.ok {
 			return Err(Error::TxFinished);
 		}
-		// Get the key
-		let res = self.tx.lock().await.as_ref().unwrap().get_opt(key.into(), &self.ro)?;
-		// Return result
-		Ok(res)
+		if let None = self.tx.lock().await.take() {
+			unreachable!()
+		}
+
+		match self.tx.lock().await.take().unwrap() {
+			TransactionType::Read(read_transaction) => {
+				let table = read_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				let mut result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				match result.as_mut() {
+					Some(v) => Ok(Some(v.value().to_vec())),
+					None => Ok(None),
+				}
+			},
+			TransactionType::Write(write_transaction) => {
+				let table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				let mut result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				match result.as_mut() {
+					Some(v) => Ok(Some(v.value().to_vec())),
+					None => Ok(None),
+				}
+			}
+		}
 	}
 	/// Insert or update a key in the database
 	pub async fn set<K, V>(&mut self, key: K, val: V) -> Result<(), Error>
@@ -151,8 +202,13 @@ impl Transaction {
 			return Err(Error::TxReadonly);
 		}
 		// Set the key
-		self.tx.lock().await.as_ref().unwrap().put(key.into(), val.into())?;
-		// Return result
+		match self.tx.lock().await.as_ref().unwrap() {
+			TransactionType::Read(_) => unreachable!(),
+			TransactionType::Write(write_transaction) => {
+				let mut table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				table.insert(key.into().as_slice(), val.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+			}
+		}
 		Ok(())
 	}
 	/// Insert a key if it doesn't exist in the database
@@ -172,18 +228,28 @@ impl Transaction {
 		// Get the transaction
 		let tx = self.tx.lock().await;
 		let tx = tx.as_ref().unwrap();
+
 		// Get the arguments
 		let key = key.into();
 		let val = val.into();
+
 		// Set the key if empty
-		match tx.get_opt(&key, &self.ro)? {
-			None => tx.put(key, val)?,
-			_ => return Err(Error::TxKeyAlreadyExists),
-		};
-		// Return result
+		match tx {
+			TransactionType::Read(_) => unreachable!(),
+			TransactionType::Write(write_transaction) => {
+				let mut table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				{
+					let key_result = table.get(key.as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+					if key_result.is_some() == true {
+						return Err(Error::TxKeyAlreadyExists);
+					}
+				}
+				table.insert(key.as_slice(), val.as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+			}
+		}
 		Ok(())
 	}
-	/// Insert a key if it doesn't exist in the database
+	/// Insert a key only if it matches a check value
 	pub async fn putc<K, V>(&mut self, key: K, val: V, chk: Option<V>) -> Result<(), Error>
 	where
 		K: Into<Key>,

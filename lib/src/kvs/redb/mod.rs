@@ -4,14 +4,22 @@ use crate::err::Error;
 use crate::kvs::Key;
 use crate::kvs::Val;
 use futures::lock::Mutex;
-use redb::{Database, Error as ReDbError, ReadableTable, TableDefinition, WriteTransaction, ReadTransaction};
-use redb::RedbKey;
+use redb::{Database, ReadableTable, TableDefinition, WriteTransaction, ReadTransaction};
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
 
 
 const TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("surreal_db");
+
+
+#[macro_export]
+macro_rules! safe_unwrap {
+    ($e:expr) => {
+        $e.map_err(|e| { Error::Ds(e.to_string()) })?
+    };
+}
+
 
 pub enum TransactionType {
 	Read(ReadTransaction<'static>),
@@ -47,7 +55,7 @@ impl Datastore {
 	/// Open a new database
 	pub async fn new(path: &str) -> Result<Datastore, Error> {
 		Ok(Datastore {
-			db: Arc::pin(Database::create(path).map_err(|e| {Error::Ds(e.to_string())})?),
+			db: Arc::pin(safe_unwrap!(Database::create(path))),
 		})
 	}
 	/// Start a new transaction
@@ -59,7 +67,7 @@ impl Datastore {
 					std::mem::transmute::<
 					ReadTransaction<'_>,
 					ReadTransaction<'static>,
-					>(self.db.begin_read().map_err(|e| {Error::Ds(e.to_string())})?)
+					>(safe_unwrap!(self.db.begin_read()))
 				};
 				TransactionType::Read(tx)
 			},
@@ -68,7 +76,7 @@ impl Datastore {
 					std::mem::transmute::<
 					WriteTransaction<'_>,
 					WriteTransaction<'static>,
-					>(self.db.begin_write().map_err(|e| {Error::Ds(e.to_string())})?)
+					>(safe_unwrap!(self.db.begin_write()))
 				};
 				TransactionType::Write(tx)
 			}
@@ -99,7 +107,7 @@ impl Transaction {
 		match self.tx.lock().await.take() {
 			Some(tx) => match tx {
 				TransactionType::Read(_) => {},
-				TransactionType::Write(write_transaction) => write_transaction.abort().map_err(|e| {Error::Ds(e.to_string())})?,
+				TransactionType::Write(write_transaction) => safe_unwrap!(write_transaction.abort()),
 			},
 			None => unreachable!(),
 		};
@@ -121,8 +129,8 @@ impl Transaction {
 		// Cancel this transaction
 		match self.tx.lock().await.take() {
 			Some(tx) => match tx {
-				TransactionType::Read(_) => {unreachable!()},
-				TransactionType::Write(write_transaction) => write_transaction.commit().map_err(|e| {Error::Ds(e.to_string())})?,
+				TransactionType::Read(_) => unreachable!(),
+				TransactionType::Write(write_transaction) => safe_unwrap!(write_transaction.commit()),
 			}
 			None => unreachable!(),
 		};
@@ -144,13 +152,13 @@ impl Transaction {
 
 		match self.tx.lock().await.as_ref().unwrap() {
 			TransactionType::Read(read_transaction) => {
-				let table = read_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
-				let result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				let table = safe_unwrap!(read_transaction.open_table(TABLE));
+				let result = safe_unwrap!(table.get(key.into().as_slice()));
 				Ok(result.is_some())
 			},
 			TransactionType::Write(write_transaction) => {
-				let table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
-				let result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				let table = safe_unwrap!(write_transaction.open_table(TABLE));
+				let result = safe_unwrap!(table.get(key.into().as_slice()));
 				Ok(result.is_some())
 			}
 		}
@@ -170,16 +178,16 @@ impl Transaction {
 
 		match self.tx.lock().await.take().unwrap() {
 			TransactionType::Read(read_transaction) => {
-				let table = read_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
-				let mut result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				let table = safe_unwrap!(read_transaction.open_table(TABLE));
+				let mut result = safe_unwrap!(table.get(key.into().as_slice()));
 				match result.as_mut() {
 					Some(v) => Ok(Some(v.value().to_vec())),
 					None => Ok(None),
 				}
 			},
 			TransactionType::Write(write_transaction) => {
-				let table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
-				let mut result = table.get(key.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				let table = safe_unwrap!(write_transaction.open_table(TABLE));
+				let mut result = safe_unwrap!(table.get(key.into().as_slice()));
 				match result.as_mut() {
 					Some(v) => Ok(Some(v.value().to_vec())),
 					None => Ok(None),
@@ -205,8 +213,8 @@ impl Transaction {
 		match self.tx.lock().await.as_ref().unwrap() {
 			TransactionType::Read(_) => unreachable!(),
 			TransactionType::Write(write_transaction) => {
-				let mut table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
-				table.insert(key.into().as_slice(), val.into().as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
+				safe_unwrap!(table.insert(key.into().as_slice(), val.into().as_slice()));
 			}
 		}
 		Ok(())
@@ -237,14 +245,14 @@ impl Transaction {
 		match tx {
 			TransactionType::Read(_) => unreachable!(),
 			TransactionType::Write(write_transaction) => {
-				let mut table = write_transaction.open_table(TABLE).map_err(|e| {Error::Ds(e.to_string())})?;
+				let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
 				{
-					let key_result = table.get(key.as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+					let key_result = safe_unwrap!(table.get(key.as_slice()));
 					if key_result.is_some() == true {
 						return Err(Error::TxKeyAlreadyExists);
 					}
 				}
-				table.insert(key.as_slice(), val.as_slice()).map_err(|e| {Error::Ds(e.to_string())})?;
+				safe_unwrap!(table.insert(key.as_slice(), val.as_slice()));
 			}
 		}
 		Ok(())
@@ -266,17 +274,35 @@ impl Transaction {
 		// Get the transaction
 		let tx = self.tx.lock().await;
 		let tx = tx.as_ref().unwrap();
+
 		// Get the arguments
 		let key = key.into();
 		let val = val.into();
 		let chk = chk.map(Into::into);
-		// Set the key if valid
-		match (tx.get_opt(&key, &self.ro)?, chk) {
-			(Some(v), Some(w)) if v == w => tx.put(key, val)?,
-			(None, None) => tx.put(key, val)?,
-			_ => return Err(Error::TxConditionNotMet),
+
+		match tx {
+			TransactionType::Read(_) => unreachable!(),
+			TransactionType::Write(write_transaction) => {
+				let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
+				let key_result = safe_unwrap!(table.get(key.clone().as_slice()));
+
+				// set the key if valid
+				match (&key_result, &chk) {
+					(Some(v), Some(w)) => {
+						let vec_ref: Vec<u8> = v.value().to_vec();
+						if &vec_ref == w {
+							std::mem::drop(key_result);
+							safe_unwrap!(table.insert(key.as_slice(), val.as_slice()));
+						}
+					},
+					(None, None) => {
+						std::mem::drop(key_result);
+						safe_unwrap!(table.insert(key.as_slice(), val.as_slice()));
+					},
+					_ => return Err(Error::TxConditionNotMet),
+				}
+			}
 		};
-		// Return result
 		Ok(())
 	}
 	/// Delete a key
@@ -293,7 +319,13 @@ impl Transaction {
 			return Err(Error::TxReadonly);
 		}
 		// Remove the key
-		self.tx.lock().await.as_ref().unwrap().delete(key.into())?;
+		match self.tx.lock().await.as_ref().unwrap() {
+			TransactionType::Read(_) => unreachable!(),
+			TransactionType::Write(write_transaction) => {
+				let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
+				safe_unwrap!(table.remove(key.into().as_slice()));
+			}
+		}
 		// Return result
 		Ok(())
 	}
@@ -317,11 +349,33 @@ impl Transaction {
 		// Get the arguments
 		let key = key.into();
 		let chk = chk.map(Into::into);
+
+
 		// Delete the key if valid
-		match (tx.get_opt(&key, &self.ro)?, chk) {
-			(Some(v), Some(w)) if v == w => tx.delete(key)?,
-			(None, None) => tx.delete(key)?,
-			_ => return Err(Error::TxConditionNotMet),
+		match tx {
+			TransactionType::Read(_) => unreachable!(),
+			TransactionType::Write(write_transaction) => {
+				let table = safe_unwrap!(write_transaction.open_table(TABLE));
+				let key_result = &table.get(key.clone().as_slice()).map_err(|e| { Error::Ds(e.to_string()) })?;
+
+				// set the key if valid
+				match (key_result, chk) {
+					(Some(v), Some(w)) => {
+						// std::mem::drop(key_result);
+						let vec_ref: Vec<u8> = v.value().to_vec();
+						if vec_ref == w {
+							let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
+							safe_unwrap!(table.remove(key.as_slice()));
+						}
+					},
+					(None, None) => {
+						// std::mem::drop(key_result);
+						let mut table = safe_unwrap!(write_transaction.open_table(TABLE));
+						safe_unwrap!(table.remove(key.as_slice()));
+					},
+					_ => return Err(Error::TxConditionNotMet),
+				}
+			}
 		};
 		// Return result
 		Ok(())
@@ -348,31 +402,43 @@ impl Transaction {
 		// Set the key range
 		let beg = rng.start.as_slice();
 		let end = rng.end.as_slice();
-		// Set the ReadOptions with the snapshot
-		let mut ro = ReadOptions::default();
-		ro.set_snapshot(&tx.snapshot());
-		// Create the iterator
-		let mut iter = tx.raw_iterator_opt(ro);
-		// Seek to the start key
-		iter.seek(&rng.start);
-		// Scan the keys in the iterator
-		while iter.valid() {
-			// Check the scan limit
-			if res.len() < limit as usize {
-				// Get the key and value
-				let (k, v) = (iter.key(), iter.value());
-				// Check the key and value
-				if let (Some(k), Some(v)) = (k, v) {
-					if k >= beg && k < end {
-						res.push((k.to_vec(), v.to_vec()));
-						iter.next();
-						continue;
+
+		let mut closure = |mut iter: redb::Range<'_, &[u8], &[u8]>| {
+			loop {
+				match iter.next() {
+					Some(Ok((k, v))) => {
+						// Check the scan limit
+						if res.len() < limit as usize {
+							// Get the key and value
+							let (k, v) = (k.value(), v.value());
+							// Check the key and value
+							if k >= beg && k < end {
+								res.push((k.to_vec(), v.to_vec()));
+							}
+						}
 					}
-				}
+					Some(Err(e)) => {
+						return Err(Error::Ds(e.to_string()));
+					}
+					None => {
+						return Ok(());
+					}
+				} 
 			}
-			// Exit
-			break;
-		}
+		};
+
+		match tx {
+			TransactionType::Read(read_transaction) => {
+				let table = safe_unwrap!(read_transaction.open_table(TABLE));
+				let generator = safe_unwrap!(table.range(rng.start.as_slice()..rng.end.as_slice()));
+				closure(generator)?;
+			},
+			TransactionType::Write(write_transaction) => {
+				let table = safe_unwrap!(write_transaction.open_table(TABLE));
+				let generator = safe_unwrap!(table.range(rng.start.as_slice()..rng.end.as_slice()));
+				closure(generator)?;
+			}
+		};
 		// Return result
 		Ok(res)
 	}

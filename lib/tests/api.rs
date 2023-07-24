@@ -234,12 +234,12 @@ mod api_integration {
 	mod redb {
 		use super::*;
 		use surrealdb::engine::local::Db;
-		use surrealdb::engine::local::ReDB;
+		use surrealdb::engine::local::ReDb;
 
 		async fn new_db() -> Surreal<Db> {
 			init_logger();
 			let path = format!("/tmp/{}.db", Ulid::new());
-			Surreal::new::<ReDB>(path.as_str()).await.unwrap()
+			Surreal::new::<ReDb>(path.as_str()).await.unwrap()
 		}
 
 		include!("api/mod.rs");

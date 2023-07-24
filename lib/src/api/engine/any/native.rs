@@ -120,7 +120,7 @@ impl Connection for Any {
 				}
 
 				"redb" => {
-					#[cfg(feature = "kv-speedb")]
+					#[cfg(feature = "kv-redb")]
 					{
 						features.insert(ExtraFeatures::Backup);
 						engine::local::native::router(address, conn_tx, route_rx);

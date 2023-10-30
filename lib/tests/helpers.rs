@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use temp_dir::TempDir;
 
 use surrealdb::dbs::capabilities::Capabilities;
 use surrealdb::dbs::Session;
@@ -7,8 +8,17 @@ use surrealdb::err::Error;
 use surrealdb::iam::{Auth, Level, Role};
 use surrealdb::kvs::Datastore;
 
+#[cfg(feature = "kv-mem")]
 pub async fn new_ds() -> Result<Datastore, Error> {
 	Ok(Datastore::new("memory").await?.with_capabilities(Capabilities::all()))
+}
+
+#[cfg(feature = "kv-rocksdb")]
+pub async fn new_ds_rocksdb() -> Result<Datastore, Error> {
+	let path = TempDir::new().unwrap().path().to_string_lossy().to_string();
+	Ok(Datastore::new(format!("rocksdb:{path}").as_str())
+		.await?
+		.with_capabilities(Capabilities::all()))
 }
 
 #[allow(dead_code)]
@@ -96,6 +106,7 @@ pub async fn iam_run_case(
 type CaseIter<'a> = std::slice::Iter<'a, ((Level, Role), (&'a str, &'a str), bool)>;
 
 #[allow(dead_code)]
+#[cfg(feature = "kv-mem")]
 pub async fn iam_check_cases(
 	cases: CaseIter<'_>,
 	scenario: &HashMap<&str, &str>,

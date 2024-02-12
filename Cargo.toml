@@ -23,7 +23,7 @@ sql2 = ["surrealdb/sql2"]
 parser2 = ["surrealdb/parser2"]
 
 [workspace]
-members = ["core", "lib", "lib/examples/actix", "lib/examples/axum"]
+members = ["core", "lib", "lib/examples/actix", "lib/examples/axum", "tests/runners"]
 
 [profile.release]
 lto = true

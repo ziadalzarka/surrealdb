@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use reblessive::Stack;
 
 use crate::{
-	sql::{
-		Array, Constant, Id, Number, Object, Query, Statement, Statements, Strand, Thing, Value,
-	},
+	sql::{Array, Constant, Id, Number, Object, Query, Statement, Statements, Thing, Value},
 	syn::parser::{mac::test_parse, Parser},
 };
 
@@ -104,7 +102,7 @@ fn parse_record_string_2() {
 		res,
 		Value::Thing(Thing {
 			tb: "a".to_owned(),
-			id: Id::Array(Array(vec![Value::Strand(Strand("foo".to_owned()))]))
+			id: Id::Array(Array(vec![Value::Strand("foo".to_owned())]))
 		})
 	)
 }

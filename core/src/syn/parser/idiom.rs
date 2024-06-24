@@ -1,7 +1,7 @@
 use reblessive::Stk;
 
 use crate::{
-	sql::{Dir, Edges, Field, Fields, Graph, Ident, Idiom, Part, Table, Tables, Value},
+	sql::{Dir, Edges, Field, Fields, Graph, Ident, Idiom, Part, Strand, Table, Tables, Value},
 	syn::token::{t, Span, TokenKind},
 };
 
@@ -282,7 +282,9 @@ impl Parser<'_> {
 				Part::Where(value)
 			}
 			t!("$param") => Part::Value(Value::Param(self.next_token_value()?)),
-			TokenKind::Qoute(_x) => Part::Value(Value::Strand(self.next_token_value()?)),
+			TokenKind::Qoute(_x) => {
+				Part::Value(Value::Strand(self.next_token_value::<Strand>()?.0))
+			}
 			_ => {
 				let idiom = self.parse_basic_idiom()?;
 				Part::Value(Value::Idiom(idiom))
@@ -515,7 +517,7 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
-	use crate::sql::{Expression, Id, Number, Object, Param, Strand, Thing};
+	use crate::sql::{Expression, Id, Number, Object, Param, Thing};
 	use crate::syn::Parse;
 
 	use super::*;
@@ -861,7 +863,7 @@ mod tests {
 					tb: "test".to_owned(),
 					id: Id::Number(1),
 				})),
-				Part::Value(Value::Strand(Strand("foo".to_owned()))),
+				Part::Value(Value::Strand("foo".to_owned())),
 			]))
 		);
 	}

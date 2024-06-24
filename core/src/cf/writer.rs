@@ -163,7 +163,7 @@ mod tests {
 	};
 	use crate::sql::thing::Thing;
 	use crate::sql::value::Value;
-	use crate::sql::{Datetime, Idiom, Number, Object, Operation, Strand};
+	use crate::sql::{Datetime, Idiom, Number, Object, Operation};
 	use crate::vs;
 	use crate::vs::{conv, Versionstamp};
 
@@ -473,7 +473,7 @@ mod tests {
 		let expected_obj_second = Value::Object(Object::from(map! {
 			"id".to_string() => Value::Thing(thing.clone()),
 			"value".to_string() => Value::Number(Number::Int(100)),
-			"new_field".to_string() => Value::Strand(Strand::from("new_value")),
+			"new_field".to_string() => Value::Strand("new_value".to_owned()),
 		}));
 		assert_eq!(r.len(), 2, "{:?}", r);
 		let expected: Vec<ChangeSet> = vec![

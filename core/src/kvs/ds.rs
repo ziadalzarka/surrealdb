@@ -2,9 +2,9 @@ use super::tr::Transactor;
 use super::tx::Transaction;
 use crate::cf;
 use crate::ctx::Context;
-use crate::dbs::capabilities::MethodTarget;
 #[cfg(feature = "jwks")]
 use crate::dbs::capabilities::NetTarget;
+use crate::dbs::capabilities::{MethodTarget, RouteTarget};
 use crate::dbs::{
 	Attach, Capabilities, Executor, Notification, Options, Response, Session, Variables,
 };
@@ -382,6 +382,13 @@ impl Datastore {
 	/// Does the datastore allow excecuting an RPC method?
 	pub(crate) fn allows_rpc_method(&self, method_target: &MethodTarget) -> bool {
 		self.capabilities.allows_rpc_method(method_target)
+	}
+
+	/// Does the datastore allow requesting an HTTP route?
+	/// This function needs to be public to allow access from the CLI crate.
+	#[doc(hidden)]
+	pub fn allows_http_route(&self, route_target: &RouteTarget) -> bool {
+		self.capabilities.allows_http_route(route_target)
 	}
 
 	/// Does the datastore allow connections to a network target?

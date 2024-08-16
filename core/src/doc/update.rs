@@ -22,6 +22,8 @@ impl Document {
 		self.allow(stk, ctx, opt, stm).await?;
 		// Alter record data
 		self.alter(stk, ctx, opt, stm).await?;
+		// Reset fields data
+		self.reset(ctx, opt, stm).await?;
 		// Merge fields data
 		self.field(stk, ctx, opt, stm).await?;
 		// Reset fields data

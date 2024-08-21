@@ -10,10 +10,10 @@ async fn export_import() {
 	let db_name = Ulid::new().to_string();
 	db.use_ns(NS).use_db(&db_name).await.unwrap();
 	for i in 0..10 {
-		let _: Vec<RecordId> = db
+		let _: Vec<ApiRecordId> = db
 			.create("user")
 			.content(Record {
-				name: &format!("User {i}"),
+				name: format!("User {i}"),
 			})
 			.await
 			.unwrap();

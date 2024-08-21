@@ -11,11 +11,13 @@ use crate::{
 		index::{Distance, HnswParams, MTreeParams, SearchParams, VectorType},
 		language::Language,
 		statements::{
+			access,
+			access::{AccessStatementGrant, AccessStatementList, AccessStatementRevoke},
 			analyze::AnalyzeStatement,
 			show::{ShowSince, ShowStatement},
 			sleep::SleepStatement,
-			BeginStatement, BreakStatement, CancelStatement, CommitStatement, ContinueStatement,
-			CreateStatement, DefineAccessStatement, DefineAnalyzerStatement,
+			AccessStatement, BeginStatement, BreakStatement, CancelStatement, CommitStatement,
+			ContinueStatement, CreateStatement, DefineAccessStatement, DefineAnalyzerStatement,
 			DefineDatabaseStatement, DefineEventStatement, DefineFieldStatement,
 			DefineFunctionStatement, DefineIndexStatement, DefineNamespaceStatement,
 			DefineParamStatement, DefineStatement, DefineTableStatement, DeleteStatement,
@@ -209,6 +211,7 @@ fn parse_define_function() {
 			permissions: Permission::Full,
 			if_not_exists: false,
 			overwrite: false,
+			returns: None,
 		}))
 	)
 }
@@ -1407,7 +1410,7 @@ fn parse_define_table() {
 			comment: None,
 			if_not_exists: false,
 			overwrite: false,
-			kind: TableType::Any,
+			kind: TableType::Normal,
 		}))
 	);
 }
@@ -1516,6 +1519,7 @@ fn parse_define_index() {
 			comment: None,
 			if_not_exists: false,
 			overwrite: false,
+			concurrently: false
 		}))
 	);
 
@@ -1532,6 +1536,7 @@ fn parse_define_index() {
 			comment: None,
 			if_not_exists: false,
 			overwrite: false,
+			concurrently: false
 		}))
 	);
 
@@ -1557,6 +1562,7 @@ fn parse_define_index() {
 			comment: None,
 			if_not_exists: false,
 			overwrite: false,
+			concurrently: false
 		}))
 	);
 
@@ -1583,6 +1589,7 @@ fn parse_define_index() {
 			comment: None,
 			if_not_exists: false,
 			overwrite: false,
+			concurrently: false
 		}))
 	);
 }
@@ -1657,7 +1664,7 @@ fn parse_delete_2() {
 					dir: Dir::Out,
 					from: Thing {
 						tb: "a".to_owned(),
-						id: Id::String("b".to_owned()),
+						id: Id::from("b"),
 					},
 					what: Tables::default(),
 				}))),
@@ -1860,7 +1867,7 @@ SELECT bar as foo,[1,2],bar OMIT bar FROM ONLY a,1
 			}])),
 			limit: Some(Limit(Value::Thing(Thing {
 				tb: "a".to_owned(),
-				id: Id::String("b".to_owned()),
+				id: Id::from("b"),
 			}))),
 			start: Some(Start(Value::Object(Object(
 				[("a".to_owned(), Value::Bool(true))].into_iter().collect()
@@ -1885,7 +1892,8 @@ fn parse_let() {
 		res,
 		Statement::Set(SetStatement {
 			name: "param".to_owned(),
-			what: Value::Number(Number::Int(1))
+			what: Value::Number(Number::Int(1)),
+			kind: None,
 		})
 	);
 
@@ -1894,7 +1902,8 @@ fn parse_let() {
 		res,
 		Statement::Set(SetStatement {
 			name: "param".to_owned(),
-			what: Value::Number(Number::Int(1))
+			what: Value::Number(Number::Int(1)),
+			kind: None,
 		})
 	);
 }
@@ -2182,7 +2191,7 @@ fn parse_relate() {
 			only: true,
 			kind: Value::Thing(Thing {
 				tb: "a".to_owned(),
-				id: Id::String("b".to_owned()),
+				id: Id::from("b"),
 			}),
 			from: Value::Array(Array(vec![
 				Value::Number(Number::Int(1)),
@@ -2417,5 +2426,43 @@ fn parse_upsert() {
 			timeout: Some(Timeout(Duration(std::time::Duration::from_secs(1)))),
 			parallel: true,
 		})
+	);
+}
+
+#[test]
+fn parse_access_grant() {
+	let res = test_parse!(parse_stmt, r#"ACCESS a ON NAMESPACE GRANT FOR USER b"#).unwrap();
+	assert_eq!(
+		res,
+		Statement::Access(AccessStatement::Grant(AccessStatementGrant {
+			ac: Ident("a".to_string()),
+			base: Some(Base::Ns),
+			subject: Some(access::Subject::User(Ident("b".to_string()))),
+		}))
+	);
+}
+
+#[test]
+fn parse_access_revoke() {
+	let res = test_parse!(parse_stmt, r#"ACCESS a ON DATABASE REVOKE b"#).unwrap();
+	assert_eq!(
+		res,
+		Statement::Access(AccessStatement::Revoke(AccessStatementRevoke {
+			ac: Ident("a".to_string()),
+			base: Some(Base::Db),
+			gr: Ident("b".to_string()),
+		}))
+	);
+}
+
+#[test]
+fn parse_access_list() {
+	let res = test_parse!(parse_stmt, r#"ACCESS a LIST"#).unwrap();
+	assert_eq!(
+		res,
+		Statement::Access(AccessStatement::List(AccessStatementList {
+			ac: Ident("a".to_string()),
+			base: None,
+		}))
 	);
 }

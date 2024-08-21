@@ -1,6 +1,5 @@
 //! Methods to use when interacting with a SurrealDB instance
 use self::query::ValidQuery;
-use crate::api::err::Error;
 use crate::api::opt;
 use crate::api::opt::auth;
 use crate::api::opt::auth::Credentials;
@@ -12,8 +11,6 @@ use crate::api::OnceLockExt;
 use crate::api::Surreal;
 use crate::opt::IntoExportDestination;
 use crate::opt::WaitFor;
-use crate::sql::to_value;
-use crate::sql::Value;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -22,6 +19,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
+use surrealdb_core::sql::{to_value as to_core_value, Array as CoreArray};
 
 pub(crate) mod live;
 pub(crate) mod query;
@@ -40,6 +38,7 @@ mod insert;
 mod invalidate;
 mod merge;
 mod patch;
+mod run;
 mod select;
 mod set;
 mod signin;
@@ -77,7 +76,10 @@ pub use merge::Merge;
 pub use patch::Patch;
 pub use query::Query;
 pub use query::QueryStream;
+pub use run::Run;
+pub use run::{IntoArgs, IntoFn};
 pub use select::Select;
+use serde_content::Serializer;
 pub use set::Set;
 pub use signin::Signin;
 pub use signup::Signup;
@@ -88,6 +90,8 @@ pub use upsert::Upsert;
 pub use use_db::UseDb;
 pub use use_ns::UseNs;
 pub use version::Version;
+
+use super::opt::IntoResource;
 
 /// A alias for an often used type of future returned by async methods in this library.
 pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;
@@ -108,7 +112,7 @@ pub struct Live;
 
 /// Responses returned with statistics
 #[derive(Debug)]
-pub struct WithStats<T>(T);
+pub struct WithStats<T>(pub T);
 
 impl<C> Surreal<C>
 where
@@ -322,11 +326,11 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn set(&self, key: impl Into<String>, value: impl Serialize) -> Set<C> {
+	pub fn set(&self, key: impl Into<String>, value: impl Serialize + 'static) -> Set<C> {
 		Set {
 			client: Cow::Borrowed(self),
 			key: key.into(),
-			value: to_value(value).map_err(Into::into),
+			value: to_core_value(value).map_err(Into::into),
 		}
 	}
 
@@ -424,16 +428,7 @@ where
 	pub fn signup<R>(&self, credentials: impl Credentials<auth::Signup, R>) -> Signup<C, R> {
 		Signup {
 			client: Cow::Borrowed(self),
-			credentials: to_value(credentials).map_err(Into::into).and_then(|x| {
-				if let Value::Object(x) = x {
-					Ok(x)
-				} else {
-					Err(Error::InternalError(
-						"credentials did not serialize to an object".to_string(),
-					)
-					.into())
-				}
-			}),
+			credentials: Serializer::new().serialize(credentials),
 			response_type: PhantomData,
 		}
 	}
@@ -552,16 +547,7 @@ where
 	pub fn signin<R>(&self, credentials: impl Credentials<auth::Signin, R>) -> Signin<C, R> {
 		Signin {
 			client: Cow::Borrowed(self),
-			credentials: to_value(credentials).map_err(Into::into).and_then(|x| {
-				if let Value::Object(x) = x {
-					Ok(x)
-				} else {
-					Err(Error::InternalError(
-						"credentials did not serialize to an object".to_string(),
-					)
-					.into())
-				}
-			}),
+			credentials: Serializer::new().serialize(credentials),
 			response_type: PhantomData,
 		}
 	}
@@ -707,11 +693,10 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn select<R>(&self, resource: impl opt::IntoResource<R>) -> Select<C, R> {
+	pub fn select<O>(&self, resource: impl IntoResource<O>) -> Select<C, O> {
 		Select {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
-			range: None,
 			response_type: PhantomData,
 			query_type: PhantomData,
 		}
@@ -763,7 +748,7 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn create<R>(&self, resource: impl opt::IntoResource<R>) -> Create<C, R> {
+	pub fn create<R>(&self, resource: impl IntoResource<R>) -> Create<C, R> {
 		Create {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
@@ -864,7 +849,7 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn insert<R>(&self, resource: impl opt::IntoResource<R>) -> Insert<C, R> {
+	pub fn insert<O>(&self, resource: impl IntoResource<O>) -> Insert<C, O> {
 		Insert {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
@@ -1022,11 +1007,10 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn upsert<R>(&self, resource: impl opt::IntoResource<R>) -> Upsert<C, R> {
+	pub fn upsert<O>(&self, resource: impl IntoResource<O>) -> Upsert<C, O> {
 		Upsert {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
-			range: None,
 			response_type: PhantomData,
 		}
 	}
@@ -1181,11 +1165,10 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn update<R>(&self, resource: impl opt::IntoResource<R>) -> Update<C, R> {
+	pub fn update<O>(&self, resource: impl IntoResource<O>) -> Update<C, O> {
 		Update {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
-			range: None,
 			response_type: PhantomData,
 		}
 	}
@@ -1214,11 +1197,10 @@ where
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn delete<R>(&self, resource: impl opt::IntoResource<R>) -> Delete<C, R> {
+	pub fn delete<O>(&self, resource: impl IntoResource<O>) -> Delete<C, O> {
 		Delete {
 			client: Cow::Borrowed(self),
 			resource: resource.into_resource(),
-			range: None,
 			response_type: PhantomData,
 		}
 	}
@@ -1238,6 +1220,45 @@ where
 	pub fn version(&self) -> Version<C> {
 		Version {
 			client: Cow::Borrowed(self),
+		}
+	}
+
+	// TODO: Re-enable doc tests
+	/// Runs a function
+	///
+	/// # Examples
+	///
+	/// ```ignore
+	/// # #[tokio::main]
+	/// # async fn main() -> surrealdb::Result<()> {
+	/// # let db = surrealdb::engine::any::connect("mem://").await?;
+	/// // Note that the sdk is currently undergoing some changes so the below examples might not
+	/// work until the sdk is somewhat more stable.
+	///
+	/// // specify no args with an empty tuple, vec, or slice
+	/// let foo = db.run("fn::foo", ()).await?; // fn::foo()
+	/// // a single value will be turned into one arguement unless it is a tuple or vec
+	/// let bar = db.run("fn::bar", 42).await?; // fn::bar(42)
+	/// // to specify a single arguement, which is an array turn it into a value, or wrap in a singleton tuple
+	/// let count = db.run("count", Value::from(vec![1,2,3])).await?;
+	/// let count = db.run("count", (vec![1,2,3],)).await?;
+	/// // specify multiple args with either a tuple or vec
+	/// let two = db.run("math::log", (100, 10)).await?; // math::log(100, 10)
+	/// let two = db.run("math::log", [100, 10]).await?; // math::log(100, 10)
+	///
+	/// # Ok(())
+	/// # }
+	/// ```
+	///
+	pub fn run(&self, name: impl IntoFn, args: impl IntoArgs) -> Run<C> {
+		let (name, version) = name.into_fn();
+		let mut arguments = CoreArray::default();
+		arguments.0 = crate::Value::array_to_core(args.into_args());
+		Run {
+			client: Cow::Borrowed(self),
+			name,
+			version,
+			args: arguments,
 		}
 	}
 

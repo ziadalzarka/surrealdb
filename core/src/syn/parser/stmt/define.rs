@@ -1,5 +1,6 @@
 use reblessive::Stk;
 
+use crate::cnf::EXPERIMENTAL_BEARER_ACCESS;
 use crate::sql::access_type::JwtAccessVerify;
 use crate::sql::index::HnswParams;
 use crate::{
@@ -47,7 +48,9 @@ impl Parser<'_> {
 			t!("FIELD") => {
 				ctx.run(|ctx| self.parse_define_field(ctx)).await.map(DefineStatement::Field)
 			}
-			t!("INDEX") => self.parse_define_index().map(DefineStatement::Index),
+			t!("INDEX") => {
+				ctx.run(|ctx| self.parse_define_index(ctx)).await.map(DefineStatement::Index)
+			}
 			t!("ANALYZER") => self.parse_define_analyzer().map(DefineStatement::Analyzer),
 			t!("ACCESS") => self.parse_define_access(ctx).await.map(DefineStatement::Access),
 			x => unexpected!(self, x, "a define statement keyword"),
@@ -147,6 +150,11 @@ impl Parser<'_> {
 				break;
 			}
 		}
+		let returns = if self.eat(t!("->")) {
+			Some(ctx.run(|ctx| self.parse_inner_kind(ctx)).await?)
+		} else {
+			None
+		};
 
 		let next = expected!(self, t!("{")).span;
 		let block = self.parse_block(ctx, next).await?;
@@ -157,6 +165,7 @@ impl Parser<'_> {
 			block,
 			if_not_exists,
 			overwrite,
+			returns,
 			..Default::default()
 		};
 
@@ -336,6 +345,25 @@ impl Parser<'_> {
 								ac.jwt = self.parse_jwt()?;
 							}
 							res.kind = AccessType::Record(ac);
+						}
+						t!("BEARER") => {
+							// TODO(gguillemas): Remove this once bearer access is no longer experimental.
+							if !*EXPERIMENTAL_BEARER_ACCESS {
+								unexpected!(
+									self,
+									t!("BEARER"),
+									"the experimental bearer access feature to be enabled"
+								);
+							}
+							self.pop_peek();
+							let mut ac = access_type::BearerAccess {
+								..Default::default()
+							};
+							if self.eat(t!("WITH")) {
+								expected!(self, t!("JWT"));
+								ac.jwt = self.parse_jwt()?;
+							}
+							res.kind = AccessType::Bearer(ac);
 						}
 						_ => break,
 					}
@@ -618,6 +646,8 @@ impl Parser<'_> {
 			..Default::default()
 		};
 
+		let mut kind: Option<TableType> = None;
+
 		loop {
 			match self.peek_kind() {
 				t!("COMMENT") => {
@@ -633,15 +663,15 @@ impl Parser<'_> {
 					match self.peek_kind() {
 						t!("NORMAL") => {
 							self.pop_peek();
-							res.kind = TableType::Normal;
+							kind = Some(TableType::Normal);
 						}
 						t!("RELATION") => {
 							self.pop_peek();
-							res.kind = TableType::Relation(self.parse_relation_schema()?);
+							kind = Some(TableType::Relation(self.parse_relation_schema()?));
 						}
 						t!("ANY") => {
 							self.pop_peek();
-							res.kind = TableType::Any;
+							kind = Some(TableType::Any);
 						}
 						x => unexpected!(self, x, "`NORMAL`, `RELATION`, or `ANY`"),
 					}
@@ -653,6 +683,9 @@ impl Parser<'_> {
 				t!("SCHEMAFULL") => {
 					self.pop_peek();
 					res.full = true;
+					if kind.is_none() {
+						kind = Some(TableType::Normal);
+					}
 				}
 				t!("PERMISSIONS") => {
 					self.pop_peek();
@@ -678,6 +711,10 @@ impl Parser<'_> {
 				}
 				_ => break,
 			}
+		}
+
+		if let Some(kind) = kind {
+			res.kind = kind;
 		}
 
 		Ok(res)
@@ -739,7 +776,7 @@ impl Parser<'_> {
 		} else {
 			(false, false)
 		};
-		let name = self.parse_local_idiom()?;
+		let name = self.parse_local_idiom(ctx).await?;
 		expected!(self, t!("ON"));
 		self.eat(t!("TABLE"));
 		let what = self.next_token_value()?;
@@ -794,7 +831,7 @@ impl Parser<'_> {
 		Ok(res)
 	}
 
-	pub fn parse_define_index(&mut self) -> ParseResult<DefineIndexStatement> {
+	pub async fn parse_define_index(&mut self, ctx: &mut Stk) -> ParseResult<DefineIndexStatement> {
 		let (if_not_exists, overwrite) = if self.eat(t!("IF")) {
 			expected!(self, t!("NOT"));
 			expected!(self, t!("EXISTS"));
@@ -823,9 +860,9 @@ impl Parser<'_> {
 				// COLUMNS and FIELDS are the same tokenkind
 				t!("FIELDS") => {
 					self.pop_peek();
-					res.cols = Idioms(vec![self.parse_local_idiom()?]);
+					res.cols = Idioms(vec![self.parse_local_idiom(ctx).await?]);
 					while self.eat(t!(",")) {
-						res.cols.0.push(self.parse_local_idiom()?);
+						res.cols.0.push(self.parse_local_idiom(ctx).await?);
 					}
 				}
 				t!("UNIQUE") => {
@@ -1041,6 +1078,10 @@ impl Parser<'_> {
 						extend_candidates,
 						keep_pruned_connections,
 					));
+				}
+				t!("CONCURRENTLY") => {
+					self.pop_peek();
+					res.concurrently = true;
 				}
 				t!("COMMENT") => {
 					self.pop_peek();

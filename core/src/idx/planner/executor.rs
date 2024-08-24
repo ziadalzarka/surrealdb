@@ -31,6 +31,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use async_recursion::async_recursion;
 
 pub(super) type KnnBruteForceEntry = (KnnPriorityList, Idiom, Arc<Vec<Number>>, Distance);
 
@@ -312,6 +313,7 @@ impl QueryExecutor {
 		}
 	}
 
+	#[async_recursion]
 	async fn new_single_iterator(
 		&self,
 		opt: &Options,
@@ -335,6 +337,7 @@ impl QueryExecutor {
 		}
 	}
 
+	#[async_recursion]
 	async fn new_index_iterator(
 		&self,
 		opt: &Options,
@@ -463,6 +466,7 @@ impl QueryExecutor {
 		None
 	}
 
+	#[async_recursion]
 	async fn build_iterators(
 		&self,
 		opt: &Options,

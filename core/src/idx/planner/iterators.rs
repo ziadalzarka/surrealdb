@@ -12,6 +12,7 @@ use radix_trie::Trie;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use async_recursion::async_recursion;
 
 pub(crate) enum ThingIterator {
 	IndexEqual(IndexEqualThingIterator),
@@ -28,6 +29,7 @@ pub(crate) enum ThingIterator {
 }
 
 impl ThingIterator {
+	#[async_recursion]
 	pub(crate) async fn next_batch<T: ThingCollector>(
 		&mut self,
 		tx: &Transaction,
@@ -50,7 +52,7 @@ impl ThingIterator {
 	}
 }
 
-pub(crate) trait ThingCollector {
+pub(crate) trait ThingCollector: std::marker::Send {
 	fn add(&mut self, thing: Thing, doc_id: Option<DocId>);
 }
 
@@ -378,7 +380,8 @@ impl JoinThingIterator {
 		Ok(false)
 	}
 
-	async fn next_batch<T: ThingCollector, F>(
+	#[async_recursion]
+	async fn next_batch<T: ThingCollector, F: std::marker::Send>(
 		&mut self,
 		tx: &Transaction,
 		limit: u32,

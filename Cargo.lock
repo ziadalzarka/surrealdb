@@ -607,12 +607,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atomic-waker"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
-
-[[package]]
 name = "autocfg"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4174,6 +4168,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4611,13 +4611,14 @@ dependencies = [
 
 [[package]]
 name = "reblessive"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb88832db7cfbac349e0276a84d4fbbcdb9cfe8069affbc765d8fd012265ba45"
+version = "0.3.5"
 dependencies = [
- "atomic-waker",
- "pin-project-lite",
- "pin-utils",
+ "ciborium",
+ "criterion",
+ "futures-util",
+ "pollster",
+ "regex",
+ "tokio",
 ]
 
 [[package]]
